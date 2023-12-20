@@ -27,7 +27,24 @@ impl<'a> Lexer<'a> {
         println!("nt: {:?}", std::str::from_utf8(ch));
         let mut consume_next = true;
         let tok = match ch[0] {
-            b'=' => Token::new(tt::ASSIGN, ch),
+            b'=' => {
+                let next = self.peek_char()[0];
+                if next == b'=' {
+                    self.read_char();
+                    Token::new(tt::EQ, b"==")
+                } else {
+                    Token::new(tt::ASSIGN, ch)
+                }
+            },
+            b'!' => {
+                let next = self.peek_char()[0];
+                if next == b'=' {
+                    self.read_char();
+                    Token::new(tt::NOT_EQ, b"!=")
+                } else {
+                    Token::new(tt::BANG, ch)
+                }
+            },
             b'+' => Token::new(tt::PLUS, ch),
             b';' => Token::new(tt::SEMICOLON, ch),
             b'(' => Token::new(tt::LPAREN, ch),
@@ -35,6 +52,11 @@ impl<'a> Lexer<'a> {
             b'{' => Token::new(tt::LBRACE, ch),
             b'}' => Token::new(tt::RBRACE, ch),
             b',' => Token::new(tt::COMMA, ch),
+            b'-' => Token::new(tt::MINUS, ch),
+            b'/' => Token::new(tt::FSLASH, ch),
+            b'*' => Token::new(tt::MUL, ch),
+            b'<' => Token::new(tt::LT, ch),
+            b'>' => Token::new(tt::GT, ch),
             b'\0' => Token::new(tt::EOF, ch),
             c if Self::is_letter(c) => {
                 consume_next = false;
@@ -81,10 +103,16 @@ impl<'a> Lexer<'a> {
         self.ch = ch;
     }
 
+    fn peek_char(&mut self) -> &[u8] {
+        self.input
+            .get(self.read_pos..(self.read_pos + 1))
+            .unwrap_or(b"\0")
+    }
+
     fn skip_ws(&mut self) {
         const WS_CHARS: &[u8] = b" \t\n\r";
         while WS_CHARS.contains(&self.ch[0]) {
-           self.read_char();
+            self.read_char();
         }
     }
 
@@ -112,6 +140,15 @@ let add = fn(x, y) {
 x + y;
 };
 let result = add(five, ten);
+!-/*5;
+5 < 10 > 5;
+if (5 < 10) {
+    return true;
+} else {
+    return false;
+}
+10 == 10;
+10 != 9;
 ";
 
         let tests = [
@@ -150,6 +187,43 @@ let result = add(five, ten);
             Token::new(tt::COMMA, b","),
             Token::new(tt::IDENT, b"ten"),
             Token::new(tt::RPAREN, b")"),
+            Token::new(tt::SEMICOLON, b";"),
+            Token::new(tt::BANG, b"!"),
+            Token::new(tt::MINUS, b"-"),
+            Token::new(tt::FSLASH, b"/"),
+            Token::new(tt::MUL, b"*"),
+            Token::new(tt::INT, b"5"),
+            Token::new(tt::SEMICOLON, b";"),
+            Token::new(tt::INT, b"5"),
+            Token::new(tt::LT, b"<"),
+            Token::new(tt::INT, b"10"),
+            Token::new(tt::GT, b">"),
+            Token::new(tt::INT, b"5"),
+            Token::new(tt::SEMICOLON, b";"),
+            Token::new(tt::IF, b"if"),
+            Token::new(tt::LPAREN, b"("),
+            Token::new(tt::INT, b"5"),
+            Token::new(tt::LT, b"<"),
+            Token::new(tt::INT, b"10"),
+            Token::new(tt::RPAREN, b")"),
+            Token::new(tt::LBRACE, b"{"),
+            Token::new(tt::RETURN, b"return"),
+            Token::new(tt::TRUE, b"true"),
+            Token::new(tt::SEMICOLON, b";"),
+            Token::new(tt::RBRACE, b"}"),
+            Token::new(tt::ELSE, b"else"),
+            Token::new(tt::LBRACE, b"{"),
+            Token::new(tt::RETURN, b"return"),
+            Token::new(tt::FALSE, b"false"),
+            Token::new(tt::SEMICOLON, b";"),
+            Token::new(tt::RBRACE, b"}"),
+            Token::new(tt::INT, b"10"),
+            Token::new(tt::EQ, b"=="),
+            Token::new(tt::INT, b"10"),
+            Token::new(tt::SEMICOLON, b";"),
+            Token::new(tt::INT, b"10"),
+            Token::new(tt::NOT_EQ, b"!="),
+            Token::new(tt::INT, b"9"),
             Token::new(tt::SEMICOLON, b";"),
             Token::new(tt::EOF, b"\0"),
         ];

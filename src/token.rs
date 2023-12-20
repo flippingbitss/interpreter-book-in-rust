@@ -7,8 +7,16 @@ pub enum TokenType {
     EOF,
     INT,
     // Operators
+    BANG,
+    MINUS,
+    FSLASH,
+    MUL,
+    LT,
+    GT,
     ASSIGN,
     PLUS,
+    EQ,
+    NOT_EQ,
     // Delimiters
     COMMA,
     SEMICOLON,
@@ -21,6 +29,11 @@ pub enum TokenType {
     IDENT,
     FUNCTION,
     LET,
+    IF,
+    RETURN,
+    TRUE,
+    ELSE,
+    FALSE,
 }
 
 pub type Literal<'a> = &'a [u8];
@@ -44,6 +57,11 @@ pub fn lookup_ident(ident: &[u8]) -> TokenType {
     match ident {
         b"fn" => TokenType::FUNCTION,
         b"let" => TokenType::LET,
+        b"true" => TokenType::TRUE,
+        b"false" => TokenType::FALSE,
+        b"return" => TokenType::RETURN,
+        b"if" => TokenType::IF,
+        b"else" => TokenType::ELSE,
         _ => TokenType::IDENT,
     }
 }
