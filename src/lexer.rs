@@ -3,7 +3,10 @@
 use crate::token::{self, Token, TokenType as tt};
 
 #[derive(Default)]
-struct Lexer<'a> {
+pub(crate) struct Lexer<'a> {
+    // todo: use &str instead to support utf-8
+    // todo: impl Iterator for lexer since Lexer is techinally an iterator 
+    // yielding char/byte tokens
     input: &'a [u8],
     pos: usize,
     read_pos: usize,
@@ -11,7 +14,7 @@ struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    fn new<I: Into<&'a [u8]>>(input: I) -> Self {
+    pub fn new<I: Into<&'a [u8]>>(input: I) -> Self {
         let mut l = Lexer {
             input: input.into(),
             ..Default::default()
@@ -20,11 +23,10 @@ impl<'a> Lexer<'a> {
         l
     }
 
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token<'a> {
         self.skip_ws();
         let ch = self.ch;
         debug_assert_ne!(ch, b" ");
-        println!("nt: {:?}", std::str::from_utf8(ch));
         let mut consume_next = true;
         let tok = match ch[0] {
             b'=' => {
@@ -35,16 +37,16 @@ impl<'a> Lexer<'a> {
                 } else {
                     Token::new(tt::ASSIGN, ch)
                 }
-            },
+            }
             b'!' => {
                 let next = self.peek_char()[0];
                 if next == b'=' {
                     self.read_char();
-                    Token::new(tt::NOT_EQ, b"!=")
+                    Token::new(tt::NOTEQ, b"!=")
                 } else {
                     Token::new(tt::BANG, ch)
                 }
-            },
+            }
             b'+' => Token::new(tt::PLUS, ch),
             b';' => Token::new(tt::SEMICOLON, ch),
             b'(' => Token::new(tt::LPAREN, ch),
@@ -222,7 +224,7 @@ if (5 < 10) {
             Token::new(tt::INT, b"10"),
             Token::new(tt::SEMICOLON, b";"),
             Token::new(tt::INT, b"10"),
-            Token::new(tt::NOT_EQ, b"!="),
+            Token::new(tt::NOTEQ, b"!="),
             Token::new(tt::INT, b"9"),
             Token::new(tt::SEMICOLON, b";"),
             Token::new(tt::EOF, b"\0"),

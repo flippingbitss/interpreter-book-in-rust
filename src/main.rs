@@ -1,6 +1,9 @@
 mod lexer;
 mod token;
+mod repl;
+mod parser;
+mod ast;
 
 fn main() {
-    println!("Hello, world!");
+    repl::start();
 }

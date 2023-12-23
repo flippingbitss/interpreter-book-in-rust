@@ -1,6 +1,8 @@
 #![allow(unused)]
 
-#[derive(Debug, PartialEq)]
+pub const EOF: Token = Token::new(TokenType::EOF, b"\0");
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TokenType {
     // Unknown token
     ILLEGAL,
@@ -16,7 +18,7 @@ pub enum TokenType {
     ASSIGN,
     PLUS,
     EQ,
-    NOT_EQ,
+    NOTEQ,
     // Delimiters
     COMMA,
     SEMICOLON,
@@ -36,16 +38,27 @@ pub enum TokenType {
     FALSE,
 }
 
+impl<'a> std::fmt::Display for Token<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} (\"{}\")",
+            self.token_type,
+            std::str::from_utf8(self.literal).unwrap()
+        )
+    }
+}
+
 pub type Literal<'a> = &'a [u8];
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Token<'a> {
     pub token_type: TokenType,
     pub literal: &'a [u8],
 }
 
 impl<'a> Token<'a> {
-    pub fn new(token_type: TokenType, literal: Literal<'a>) -> Self {
+    pub const fn new(token_type: TokenType, literal: Literal<'a>) -> Self {
         Token {
             token_type,
             literal,
