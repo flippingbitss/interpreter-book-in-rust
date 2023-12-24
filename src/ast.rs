@@ -3,19 +3,21 @@ use core::fmt;
 use crate::token::Token;
 
 #[derive(Copy, Clone)]
-pub struct Identifier<'a> {
-    pub token: Token<'a>,
-    pub value: &'a [u8],
-}
-
-#[derive(Copy, Clone)]
-pub struct Expr<'a> {
-    pub token: Token<'a>,
+pub enum Expr<'a> {
+    Identifier { token: Token<'a>, value: &'a [u8] },
+    IntLiteral { token: Token<'a>, value: i64 },
 }
 
 impl fmt::Display for Expr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", std::str::from_utf8(self.token.literal).unwrap())
+        match self {
+            Expr::Identifier { token, .. } => {
+                write!(f, "{}", std::str::from_utf8(token.literal).unwrap())
+            }
+            Expr::IntLiteral { token, .. } => {
+                write!(f, "{}", std::str::from_utf8(token.literal).unwrap())
+            }
+        }
     }
 }
 
@@ -25,24 +27,15 @@ pub struct Program<'a> {
 
 #[derive(Copy, Clone)]
 pub enum Stmt<'a> {
-    Let {
-        token: Token<'a>,
-        name: Identifier<'a>,
-    },
-    Return {
-        token: Token<'a>,
-    },
-    Expr {
-        expr: Expr<'a>,
-    },
+    Let { token: Token<'a>, name: Expr<'a> },
+    Return { token: Token<'a> },
+    Expr { expr: Expr<'a> },
 }
 
 impl fmt::Display for Stmt<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Stmt::Expr { expr } => {
-                write!(f, "{};", std::str::from_utf8(expr.token.literal).unwrap())
-            }
+            Stmt::Expr { expr } => write!(f, "{};", expr),
             Stmt::Return { token } => {
                 write!(f, "{} <>;", std::str::from_utf8(token.literal).unwrap())
             }
@@ -50,7 +43,7 @@ impl fmt::Display for Stmt<'_> {
                 f,
                 "{} {} = <expr>;",
                 std::str::from_utf8(token.literal).unwrap(),
-                std::str::from_utf8(name.token.literal).unwrap(),
+                name,
             ),
         }
     }

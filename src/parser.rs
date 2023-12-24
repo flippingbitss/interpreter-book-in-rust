@@ -1,6 +1,17 @@
 #![allow(unused, dead_code)]
+
+enum PREC {
+    Lowest,
+    Equals,
+    LtOrGt,
+    Sum,
+    Product,
+    Prefix,
+    FnCall,
+}
+
 use crate::{
-    ast::{Expr, Program, Stmt},
+    ast::{self, Expr, Program, Stmt},
     lexer::Lexer,
     token::{self, Token, TokenType},
 };
@@ -47,7 +58,7 @@ impl<'a> Parser<'a> {
         match self.curr_token.token_type {
             TokenType::LET => self.parse_let_stmt(),
             TokenType::RETURN => self.parse_return_stmt(),
-            _ => None,
+            _ => self.parse_expr_stmt(),
         }
     }
 
@@ -56,7 +67,7 @@ impl<'a> Parser<'a> {
         if !self.advance_if_peek(TokenType::IDENT) {
             return None;
         }
-        let name = crate::ast::Identifier {
+        let name = ast::Expr::Identifier {
             token: self.curr_token,
             value: self.curr_token.literal,
         };
@@ -84,13 +95,14 @@ impl<'a> Parser<'a> {
 
     fn parse_expr_stmt(&mut self) -> Option<Stmt<'a>> {
         let token = self.curr_token;
-        while !self.is_curr_token(TokenType::SEMICOLON) {
+        let expr = self.parse_expr(PREC::Lowest as u8);
+
+        // optional semicolon
+        if self.is_peek_token(TokenType::SEMICOLON) {
             self.next_token();
         }
 
-        Some(Stmt::Expr {
-            expr: Expr { token },
-        })
+        expr.map(|e| Stmt::Expr { expr: e })
     }
 
     fn is_curr_token(&self, tok_type: TokenType) -> bool {
@@ -118,13 +130,43 @@ impl<'a> Parser<'a> {
         );
         self.errors.push(error_msg);
     }
+
+    fn parse_expr(&mut self, prec: u8) -> Option<Expr<'a>> {
+        // try as prefix first
+        let ident = match self.curr_token.token_type {
+            TokenType::IDENT => Some(self.parse_ident()),
+            TokenType::INT => self.parse_int_literal(),
+            _ => None,
+        };
+        ident
+    }
+
+    fn parse_ident(&self) -> Expr<'a> {
+        Expr::Identifier {
+            token: self.curr_token,
+            value: self.curr_token.literal,
+        }
+    }
+
+    fn parse_int_literal(&self) -> Option<Expr<'a>> {
+        std::str::from_utf8(self.curr_token.literal)
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+            .map(|value| Expr::IntLiteral {
+                token: self.curr_token,
+                value,
+            })
+    }
+
+    //fn parse_prefix_expr(&mut self, prec: u8) -> Option<Expr<'a>>
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{Expr, Identifier, Stmt},
+        ast::{Expr, Program, Stmt},
         lexer::Lexer,
+        parser::PREC,
         token::{Token, TokenType},
     };
 
@@ -160,7 +202,7 @@ return xyz;
 
         if let Stmt::Let { name, token } = stmt {
             assert_eq!(token.literal, b"let");
-            assert_eq!(name.value, tc_name);
+            assert!(matches!(name, Expr::Identifier { token, value }));
         };
     }
 
@@ -183,7 +225,7 @@ return xyz;
     fn test_display() {
         let a = Stmt::Let {
             token: Token::new(TokenType::LET, b"let"),
-            name: Identifier {
+            name: Expr::Identifier {
                 token: Token::new(TokenType::IDENT, b"x"),
                 value: b"x",
             },
@@ -199,4 +241,38 @@ return xyz;
         }
     }
 
+    #[test]
+    fn test_expr_stmt() {
+        let input = "foobar;";
+        assert_prog(input, |stmts| {
+            assert_eq!(stmts.len(), 1);
+            matches!(stmts[0], Stmt:: Expr { expr: Expr::Identifier {token,..}} if token.literal == b"foobar");
+        });
+    }
+
+    #[test]
+    fn test_int_expr() {
+        let input = "123";
+        assert_prog(input, |stmts| {
+            assert_eq!(stmts.len(), 1);
+            matches!(stmts[0], Stmt:: Expr { expr: Expr::IntLiteral {value,..}} if value == 123_i64 );
+        });
+    }
+
+    fn assert_prog(input: &str, assertions: fn(stmts: &[Stmt])) {
+        let mut p = Parser::new(Lexer::new(input.as_bytes()));
+        let prog = p.parse();
+        assert!(prog.is_ok());
+        assertions(&prog.unwrap().stmts);
+    }
+
+    #[test]
+    fn test_1() {
+        dbg!(std::mem::discriminant(&PREC::Lowest));
+        dbg!(std::mem::discriminant(&PREC::FnCall));
+        dbg!(std::mem::size_of::<PREC>());
+        dbg!(PREC::Lowest as u8);
+        dbg!(PREC::FnCall as u8);
+        //panic!()
+    }
 }
