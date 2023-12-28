@@ -1,6 +1,18 @@
 #![allow(unused)]
 
+use core::fmt;
+
 pub const EOF: Token = Token::new(TokenType::EOF, b"\0");
+
+pub enum Prec {
+    Lowest,
+    Equals,
+    LtOrGt,
+    Sum,
+    Product,
+    Prefix,
+    FnCall,
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TokenType {
@@ -38,14 +50,25 @@ pub enum TokenType {
     FALSE,
 }
 
+impl TokenType {
+    pub fn precedance(&self) -> Prec {
+        match self {
+            Self::EQ => Prec::Equals,
+            Self::NOTEQ => Prec::Equals,
+            Self::LT => Prec::LtOrGt,
+            Self::GT => Prec::LtOrGt,
+            Self::PLUS => Prec::Sum,
+            Self::MINUS => Prec::Sum,
+            Self::FSLASH => Prec::Product,
+            Self::MUL => Prec::Product,
+            _ => Prec::Lowest,
+        }
+    }
+}
+
 impl<'a> std::fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:?} (\"{}\")",
-            self.token_type,
-            std::str::from_utf8(self.literal).unwrap()
-        )
+        write!(f, "{}", std::str::from_utf8(self.literal).unwrap())
     }
 }
 

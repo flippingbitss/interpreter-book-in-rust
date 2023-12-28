@@ -1,19 +1,9 @@
 #![allow(unused, dead_code)]
 
-enum PREC {
-    Lowest,
-    Equals,
-    LtOrGt,
-    Sum,
-    Product,
-    Prefix,
-    FnCall,
-}
-
 use crate::{
     ast::{self, Expr, Program, Stmt},
     lexer::Lexer,
-    token::{self, Token, TokenType},
+    token::{self, Prec, Token, TokenType},
 };
 
 struct Parser<'a> {
@@ -95,7 +85,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expr_stmt(&mut self) -> Option<Stmt<'a>> {
         let token = self.curr_token;
-        let expr = self.parse_expr(PREC::Lowest as u8);
+        let expr = self.parse_expr(Prec::Lowest as u8);
 
         // optional semicolon
         if self.is_peek_token(TokenType::SEMICOLON) {
@@ -133,19 +123,28 @@ impl<'a> Parser<'a> {
 
     fn parse_expr(&mut self, prec: u8) -> Option<Expr<'a>> {
         // try as prefix first
-        let ident = match self.curr_token.token_type {
-            TokenType::IDENT => Some(self.parse_ident()),
+        let curr_tt = self.curr_token.token_type;
+        let left = match curr_tt {
+            TokenType::IDENT => self.parse_ident(),
             TokenType::INT => self.parse_int_literal(),
+            TokenType::BANG => self.parse_prefix_expr(prec),
+            TokenType::MINUS => self.parse_prefix_expr(prec),
             _ => None,
         };
-        ident
+
+        let expr = left.map(|l| match curr_tt {
+            TokenType::PLUS => self.parse_infix_expr(prec),
+            _ => None,
+        });
+
+        expr
     }
 
-    fn parse_ident(&self) -> Expr<'a> {
-        Expr::Identifier {
+    fn parse_ident(&self) -> Option<Expr<'a>> {
+        Some(Expr::Identifier {
             token: self.curr_token,
             value: self.curr_token.literal,
-        }
+        })
     }
 
     fn parse_int_literal(&self) -> Option<Expr<'a>> {
@@ -158,7 +157,29 @@ impl<'a> Parser<'a> {
             })
     }
 
-    //fn parse_prefix_expr(&mut self, prec: u8) -> Option<Expr<'a>>
+    fn parse_prefix_expr(&mut self, prec: u8) -> Option<Expr<'a>> {
+        let token = self.curr_token;
+        self.next_token();
+        let expr = self.parse_expr(Prec::Prefix as u8).unwrap();
+        Some(Expr::Prefix {
+            token,
+            op: token.literal,
+            expr: Box::new(expr),
+        })
+    }
+
+    fn parse_infix_expr(&mut self, expr: Expr<'a>, prec: u8) -> Option<Expr<'a>> {
+        let token = self.curr_token;
+        let curr_prec = token.token_type.precedance();
+        let peek_prec = token.token_type.precedance();
+        self.next_token();
+        let expr = self.parse_expr(Prec::Prefix as u8).unwrap();
+        Some(Expr::Prefix {
+            token,
+            op: token.literal,
+            expr: Box::new(expr),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -166,7 +187,7 @@ mod tests {
     use crate::{
         ast::{Expr, Program, Stmt},
         lexer::Lexer,
-        parser::PREC,
+        parser::Prec,
         token::{Token, TokenType},
     };
 
@@ -259,7 +280,55 @@ return xyz;
         });
     }
 
-    fn assert_prog(input: &str, assertions: fn(stmts: &[Stmt])) {
+    #[test]
+    fn test_prefix_expr() {
+        let inputs = [("!5", b"!", 5 as i64), ("-10", b"-", 10 as i64)];
+        for (input, eop, eexpr) in inputs {
+            assert_prog(input, |stmts| {
+                assert_eq!(stmts.len(), 1);
+                if let Some(Stmt::Expr { expr }) = stmts.first() {
+                    if let Expr::Prefix { op, expr, .. } = expr {
+                        assert_eq!(op, eop);
+                        assert!(matches!(**expr, Expr::IntLiteral {value,..} if value == eexpr));
+                    } else {
+                        panic!()
+                    }
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn test_infix_expr() {
+        let inputs = [
+            ("5 + 5;", 5, "+", 5),
+            ("5 - 5;", 5, "-", 5),
+            ("5 * 5;", 5, "*", 5),
+            ("5 / 5;", 5, "/", 5),
+            ("5 > 5;", 5, ">", 5),
+            ("5 < 5;", 5, "<", 5),
+            ("5 == 5;", 5, "==", 5),
+            ("5 != 5;", 5, "!=", 5),
+        ];
+        for (input, eleft, eop, eright) in inputs {
+            assert_prog(input, |stmts| {
+                if let Some(Stmt::Expr { expr }) = stmts.first() {
+                    if let Expr::Infix {
+                        op, left, right, ..
+                    } = expr
+                    {
+                        assert_eq!(op, &eop.as_bytes());
+                        assert!(matches!(**left, Expr::IntLiteral {value,..} if value == eleft));
+                        assert!(matches!(**right, Expr::IntLiteral {value,..} if value == eright));
+                    } else {
+                        panic!()
+                    }
+                }
+            });
+        }
+    }
+
+    fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {
         let mut p = Parser::new(Lexer::new(input.as_bytes()));
         let prog = p.parse();
         assert!(prog.is_ok());
@@ -268,11 +337,11 @@ return xyz;
 
     #[test]
     fn test_1() {
-        dbg!(std::mem::discriminant(&PREC::Lowest));
-        dbg!(std::mem::discriminant(&PREC::FnCall));
-        dbg!(std::mem::size_of::<PREC>());
-        dbg!(PREC::Lowest as u8);
-        dbg!(PREC::FnCall as u8);
+        dbg!(std::mem::discriminant(&Prec::Lowest));
+        dbg!(std::mem::discriminant(&Prec::FnCall));
+        dbg!(std::mem::size_of::<Prec>());
+        dbg!(Prec::Lowest as u8);
+        dbg!(Prec::FnCall as u8);
         //panic!()
     }
 }
