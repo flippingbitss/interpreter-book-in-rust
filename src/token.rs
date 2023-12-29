@@ -4,6 +4,7 @@ use core::fmt;
 
 pub const EOF: Token = Token::new(TokenType::EOF, b"\0");
 
+#[derive(Debug, Copy, Clone)]
 pub enum Prec {
     Lowest,
     Equals,
@@ -51,7 +52,7 @@ pub enum TokenType {
 }
 
 impl TokenType {
-    pub fn precedance(&self) -> Prec {
+    pub fn precedence(&self) -> Prec {
         match self {
             Self::EQ => Prec::Equals,
             Self::NOTEQ => Prec::Equals,

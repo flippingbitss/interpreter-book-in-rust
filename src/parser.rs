@@ -6,7 +6,7 @@ use crate::{
     token::{self, Prec, Token, TokenType},
 };
 
-struct Parser<'a> {
+pub struct Parser<'a> {
     lexer: Lexer<'a>,
     curr_token: Token<'a>,
     peek_token: Token<'a>,
@@ -14,7 +14,7 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(mut lexer: Lexer<'a>) -> Self {
+    pub fn new(mut lexer: Lexer<'a>) -> Self {
         Parser {
             curr_token: lexer.next_token(),
             peek_token: lexer.next_token(),
@@ -28,7 +28,7 @@ impl<'a> Parser<'a> {
         self.peek_token = self.lexer.next_token();
     }
 
-    fn parse(&mut self) -> Result<Program, Vec<String>> {
+    pub fn parse(&mut self) -> Result<Program, Vec<String>> {
         let mut stmts = Vec::new();
 
         while self.curr_token != token::EOF {
@@ -85,8 +85,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expr_stmt(&mut self) -> Option<Stmt<'a>> {
         let token = self.curr_token;
-        let expr = self.parse_expr(Prec::Lowest as u8);
-
+        let expr = self.parse_expr(Prec::Lowest);
         // optional semicolon
         if self.is_peek_token(TokenType::SEMICOLON) {
             self.next_token();
@@ -121,7 +120,7 @@ impl<'a> Parser<'a> {
         self.errors.push(error_msg);
     }
 
-    fn parse_expr(&mut self, prec: u8) -> Option<Expr<'a>> {
+    fn parse_expr(&mut self, prec: Prec) -> Option<Expr<'a>> {
         // try as prefix first
         let curr_tt = self.curr_token.token_type;
         let left = match curr_tt {
@@ -132,11 +131,31 @@ impl<'a> Parser<'a> {
             _ => None,
         };
 
-        let expr = left.map(|l| match curr_tt {
-            TokenType::PLUS => self.parse_infix_expr(prec),
-            _ => None,
-        });
-
+        if left.is_none() {
+            return None;
+        }
+        let mut expr = left;
+        while !self.is_peek_token(TokenType::SEMICOLON)
+            && (prec as u8) < self.peek_token.token_type.precedence() as u8
+        {
+            let infix = matches!(
+                self.peek_token.token_type,
+                TokenType::PLUS
+                    | TokenType::MINUS
+                    | TokenType::FSLASH
+                    | TokenType::MUL
+                    | TokenType::EQ
+                    | TokenType::NOTEQ
+                    | TokenType::LT
+                    | TokenType::GT
+            );
+            if infix {
+                self.next_token();
+                expr = expr.and_then(|e| self.parse_infix_expr(e));
+            } else {
+                return expr;
+            }
+        }
         expr
     }
 
@@ -157,27 +176,26 @@ impl<'a> Parser<'a> {
             })
     }
 
-    fn parse_prefix_expr(&mut self, prec: u8) -> Option<Expr<'a>> {
+    fn parse_prefix_expr(&mut self, prec: Prec) -> Option<Expr<'a>> {
         let token = self.curr_token;
         self.next_token();
-        let expr = self.parse_expr(Prec::Prefix as u8).unwrap();
-        Some(Expr::Prefix {
+        self.parse_expr(Prec::Prefix).map(|expr| Expr::Prefix {
             token,
             op: token.literal,
             expr: Box::new(expr),
         })
     }
 
-    fn parse_infix_expr(&mut self, expr: Expr<'a>, prec: u8) -> Option<Expr<'a>> {
+    fn parse_infix_expr(&mut self, left: Expr<'a>) -> Option<Expr<'a>> {
         let token = self.curr_token;
-        let curr_prec = token.token_type.precedance();
-        let peek_prec = token.token_type.precedance();
+        let curr_prec = token.token_type.precedence();
         self.next_token();
-        let expr = self.parse_expr(Prec::Prefix as u8).unwrap();
-        Some(Expr::Prefix {
+        let expr = self.parse_expr(curr_prec).unwrap();
+        Some(Expr::Infix {
             token,
+            left: Box::new(left),
             op: token.literal,
-            expr: Box::new(expr),
+            right: Box::new(expr),
         })
     }
 }
@@ -291,6 +309,7 @@ return xyz;
                         assert_eq!(op, eop);
                         assert!(matches!(**expr, Expr::IntLiteral {value,..} if value == eexpr));
                     } else {
+                        eprintln!("expr doesn't match");
                         panic!()
                     }
                 }
@@ -328,20 +347,19 @@ return xyz;
         }
     }
 
+    #[test]
+    fn test_complex_expr() {
+        let input = "5 + 10 * -2;";
+        let ast = "(5 + (10 * (-2)));";
+        assert_prog(input, |stmts| {
+            assert_eq!(ast, stmts[0].to_string());
+        })
+    }
+
     fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {
         let mut p = Parser::new(Lexer::new(input.as_bytes()));
         let prog = p.parse();
         assert!(prog.is_ok());
         assertions(&prog.unwrap().stmts);
-    }
-
-    #[test]
-    fn test_1() {
-        dbg!(std::mem::discriminant(&Prec::Lowest));
-        dbg!(std::mem::discriminant(&Prec::FnCall));
-        dbg!(std::mem::size_of::<Prec>());
-        dbg!(Prec::Lowest as u8);
-        dbg!(Prec::FnCall as u8);
-        //panic!()
     }
 }

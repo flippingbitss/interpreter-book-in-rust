@@ -1,5 +1,6 @@
-use core::fmt;
+#![allow(unused, dead_code)]
 
+use core::fmt;
 use crate::token::Token;
 
 // Remove heap allocation per node to single allocation per AST
