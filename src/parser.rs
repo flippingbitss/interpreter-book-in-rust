@@ -349,11 +349,22 @@ return xyz;
 
     #[test]
     fn test_complex_expr() {
-        let input = "5 + 10 * -2;";
-        let ast = "(5 + (10 * (-2)));";
-        assert_prog(input, |stmts| {
-            assert_eq!(ast, stmts[0].to_string());
-        })
+        let inputs = [
+            ("-a * b", "((-a) * b)"),
+            ("!-a", "(!(-a))"),
+            ("a + b + c", "((a + b) + c)"),
+            ("a * b * c", "((a * b) * c)"),
+            ("a * b / c", "((a * b) / c)"),
+            ("a + b / c", "(a + (b / c))"),
+            ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
+            ("5 < 4 != 3 < 4", "((5 < 4) != (3 < 4))"),
+            ("3 + 4 * 5 == 3 * 1 + 4 * 5", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))"),
+        ];
+        for (i,o) in inputs {
+            assert_prog(i, |stmts| {
+                assert_eq!(o, stmts[0].to_string());
+            })
+        }
     }
 
     fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {

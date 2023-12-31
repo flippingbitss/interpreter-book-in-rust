@@ -67,7 +67,7 @@ pub enum Stmt<'a> {
 impl fmt::Display for Stmt<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Stmt::Expr { expr } => write!(f, "{};", expr),
+            Stmt::Expr { expr } => write!(f, "{}", expr),
             Stmt::Return { token } => {
                 write!(f, "{} <>;", std::str::from_utf8(token.literal).unwrap())
             }
