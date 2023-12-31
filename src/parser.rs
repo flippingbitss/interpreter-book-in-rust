@@ -124,6 +124,7 @@ impl<'a> Parser<'a> {
         // try as prefix first
         let curr_tt = self.curr_token.token_type;
         let left = match curr_tt {
+            TokenType::LPAREN => self.parse_group_expr(),
             TokenType::TRUE => self.parse_bool_literal(),
             TokenType::FALSE => self.parse_bool_literal(),
             TokenType::IDENT => self.parse_ident(),
@@ -206,6 +207,15 @@ impl<'a> Parser<'a> {
             op: token.literal,
             right: Box::new(expr),
         })
+    }
+
+    fn parse_group_expr(&mut self) -> Option<Expr<'a>> {
+        self.next_token();
+        let expr = self.parse_expr(Prec::Lowest);
+        if !self.advance_if_peek(TokenType::RPAREN) {
+            return None;
+        }
+        expr
     }
 }
 
@@ -417,7 +427,7 @@ return xyz;
             ("false", "false"),
             ("3 > 5 == false", "((3 > 5) == false)"),
             ("3 < 5 == true", "((3 < 5) == true)"),
-       ];
+        ];
         for (i, o) in inputs {
             assert_prog(i, |stmts| {
                 assert_eq!(o, stmts[0].to_string());
@@ -425,6 +435,21 @@ return xyz;
         }
     }
 
+    #[test]
+    fn test_group_expr() {
+        let inputs = [
+            ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            ("-(5 + 5)", "(-(5 + 5))"),
+            ("!(true == true)", "(!(true == true))"),
+        ];
+        for (i, o) in inputs {
+            assert_prog(i, |stmts| {
+                assert_eq!(o, stmts[0].to_string());
+            })
+        }
+    }
 
     fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {
         let mut p = Parser::new(Lexer::new(input.as_bytes()));
