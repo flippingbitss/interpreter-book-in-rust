@@ -75,7 +75,7 @@ impl<'a> std::fmt::Display for Token<'a> {
 
 pub type Literal<'a> = &'a [u8];
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Token<'a> {
     pub token_type: TokenType,
     pub literal: &'a [u8],

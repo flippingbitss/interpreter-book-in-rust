@@ -124,6 +124,8 @@ impl<'a> Parser<'a> {
         // try as prefix first
         let curr_tt = self.curr_token.token_type;
         let left = match curr_tt {
+            TokenType::TRUE => self.parse_bool_literal(),
+            TokenType::FALSE => self.parse_bool_literal(),
             TokenType::IDENT => self.parse_ident(),
             TokenType::INT => self.parse_int_literal(),
             TokenType::BANG => self.parse_prefix_expr(prec),
@@ -176,6 +178,13 @@ impl<'a> Parser<'a> {
             })
     }
 
+    fn parse_bool_literal(&self) -> Option<Expr<'a>> {
+        Some(Expr::BoolLiteral {
+            token: self.curr_token,
+            value: self.is_curr_token(TokenType::TRUE),
+        })
+    }
+
     fn parse_prefix_expr(&mut self, prec: Prec) -> Option<Expr<'a>> {
         let token = self.curr_token;
         self.next_token();
@@ -210,6 +219,37 @@ mod tests {
     };
 
     use super::Parser;
+
+    fn bytes_as_str(value: &[u8]) -> &str {
+        std::str::from_utf8(value).unwrap()
+    }
+
+    fn test_int_literal<'a>(expr: &Expr<'a>, expected: i64) {
+        match expr {
+            Expr::IntLiteral { token, value } => {
+                assert_eq!(
+                    *value, expected,
+                    "expected Int value {} but got {}",
+                    expected, *value
+                );
+            }
+            _ => {
+                panic!("expr not an int literal. Instead got {:?}", expr);
+            }
+        }
+        matches!(expr, Expr::IntLiteral {value,..} if *value ==  expected);
+    }
+
+    fn test_ident<'a>(expr: &Expr<'a>, expected_literal: &[u8]) {
+        match expr {
+            Expr::Identifier { token, value } => {
+                assert!(false);
+            }
+            _ => {
+                panic!("expr not an int literal. Instead got {:?}", expr);
+            }
+        }
+    }
 
     #[test]
     fn test_stmts() {
@@ -337,8 +377,8 @@ return xyz;
                     } = expr
                     {
                         assert_eq!(op, &eop.as_bytes());
-                        assert!(matches!(**left, Expr::IntLiteral {value,..} if value == eleft));
-                        assert!(matches!(**right, Expr::IntLiteral {value,..} if value == eright));
+                        test_int_literal(left, eleft);
+                        test_int_literal(right, eright);
                     } else {
                         panic!()
                     }
@@ -358,14 +398,33 @@ return xyz;
             ("a + b / c", "(a + (b / c))"),
             ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f)"),
             ("5 < 4 != 3 < 4", "((5 < 4) != (3 < 4))"),
-            ("3 + 4 * 5 == 3 * 1 + 4 * 5", "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))"),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            ),
         ];
-        for (i,o) in inputs {
+        for (i, o) in inputs {
             assert_prog(i, |stmts| {
                 assert_eq!(o, stmts[0].to_string());
             })
         }
     }
+
+    #[test]
+    fn test_bool_literal() {
+        let inputs = [
+            ("true", "true"),
+            ("false", "false"),
+            ("3 > 5 == false", "((3 > 5) == false)"),
+            ("3 < 5 == true", "((3 < 5) == true)"),
+       ];
+        for (i, o) in inputs {
+            assert_prog(i, |stmts| {
+                assert_eq!(o, stmts[0].to_string());
+            })
+        }
+    }
+
 
     fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {
         let mut p = Parser::new(Lexer::new(input.as_bytes()));

@@ -5,6 +5,7 @@ use crate::token::Token;
 
 // Remove heap allocation per node to single allocation per AST
 // with an arena alloc
+#[derive(Debug)]
 pub enum Expr<'a> {
     Identifier {
         token: Token<'a>,
@@ -13,6 +14,10 @@ pub enum Expr<'a> {
     IntLiteral {
         token: Token<'a>,
         value: i64,
+    },
+    BoolLiteral {
+        token: Token<'a>,
+        value: bool,
     },
     Prefix {
         token: Token<'a>,
@@ -34,6 +39,9 @@ impl fmt::Display for Expr<'_> {
                 write!(f, "{}", token)
             }
             Expr::IntLiteral { token, .. } => {
+                write!(f, "{}", token)
+            }
+            Expr::BoolLiteral { token, .. } => {
                 write!(f, "{}", token)
             }
             Expr::Prefix { expr, op, .. } => {
