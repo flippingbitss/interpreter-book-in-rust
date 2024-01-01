@@ -125,6 +125,7 @@ impl<'a> Parser<'a> {
         let curr_tt = self.curr_token.token_type;
         let left = match curr_tt {
             TokenType::LPAREN => self.parse_group_expr(),
+            TokenType::IF => self.parse_if_expr(),
             TokenType::TRUE => self.parse_bool_literal(),
             TokenType::FALSE => self.parse_bool_literal(),
             TokenType::IDENT => self.parse_ident(),
@@ -217,6 +218,58 @@ impl<'a> Parser<'a> {
         }
         expr
     }
+
+    fn parse_if_expr(&mut self) -> Option<Expr<'a>> {
+        let token = self.curr_token;
+        if !self.advance_if_peek(TokenType::LPAREN) {
+            return None;
+        }
+
+        self.next_token();
+        let condition = self.parse_expr(Prec::Lowest);
+
+        if condition.is_none() {
+            return None;
+        }
+
+        if !self.advance_if_peek(TokenType::RPAREN) {
+            return None;
+        }
+
+        if !self.advance_if_peek(TokenType::LBRACE) {
+            return None;
+        }
+
+        let consequence = self.parse_block_stmt();
+        let mut alternative = None;
+        if self.is_peek_token(TokenType::ELSE) {
+            self.next_token();
+            if !self.advance_if_peek(TokenType::LBRACE) {
+                return None;
+            }
+            alternative = Some(Box::new(self.parse_block_stmt()));
+        }
+
+        Some(Expr::If {
+            token,
+            condition: Box::new(condition.unwrap()),
+            consequence: Box::new(consequence),
+            alternative,
+        })
+    }
+
+    fn parse_block_stmt(&mut self) -> Stmt<'a> {
+        let token = self.curr_token;
+        let mut stmts = Vec::new();
+        while !self.is_curr_token(TokenType::RBRACE) && !self.is_curr_token(TokenType::EOF) {
+            if let Some(s) = self.parse_stmt() {
+                stmts.push(s);
+            }
+            self.next_token();
+        }
+
+        Stmt::Block { token, stmts }
+    }
 }
 
 #[cfg(test)]
@@ -230,11 +283,13 @@ mod tests {
 
     use super::Parser;
 
+    type AssertExpr = fn(&Expr) -> ();
+
     fn bytes_as_str(value: &[u8]) -> &str {
         std::str::from_utf8(value).unwrap()
     }
 
-    fn test_int_literal<'a>(expr: &Expr<'a>, expected: i64) {
+    fn assert_int_literal(expr: &Expr, expected: i64) {
         match expr {
             Expr::IntLiteral { token, value } => {
                 assert_eq!(
@@ -247,17 +302,43 @@ mod tests {
                 panic!("expr not an int literal. Instead got {:?}", expr);
             }
         }
-        matches!(expr, Expr::IntLiteral {value,..} if *value ==  expected);
     }
 
-    fn test_ident<'a>(expr: &Expr<'a>, expected_literal: &[u8]) {
+    fn assert_ident(expr: &Expr, expected_literal: &[u8]) {
         match expr {
             Expr::Identifier { token, value } => {
-                assert!(false);
+                assert_eq!(bytes_as_str(value), bytes_as_str(expected_literal))
             }
             _ => {
                 panic!("expr not an int literal. Instead got {:?}", expr);
             }
+        }
+    }
+
+    fn assert_expr_stmt(stmt: &Stmt, assert: AssertExpr) {
+        match stmt {
+            Stmt::Expr { expr } => assert(expr),
+            _ => panic!("not an expression statement"),
+        };
+    }
+
+    fn assert_block_stmt(stmt: &Stmt, assert: AssertExpr) {
+        match stmt {
+            Stmt::Block { token, stmts } => stmts.iter().for_each(|s| assert_expr_stmt(s, assert)),
+            _ => panic!("not an expression statement"),
+        };
+    }
+
+    fn test_infix(expr: &Expr, eop: &[u8], eleft: AssertExpr, eright: AssertExpr) {
+        if let Expr::Infix {
+            op, left, right, ..
+        } = expr
+        {
+            assert_eq!(op, &eop);
+            eleft(left);
+            eright(right);
+        } else {
+            panic!("not an infix expression")
         }
     }
 
@@ -387,8 +468,8 @@ return xyz;
                     } = expr
                     {
                         assert_eq!(op, &eop.as_bytes());
-                        test_int_literal(left, eleft);
-                        test_int_literal(right, eright);
+                        assert_int_literal(left, eleft);
+                        assert_int_literal(right, eright);
                     } else {
                         panic!()
                     }
@@ -451,10 +532,68 @@ return xyz;
         }
     }
 
+    #[test]
+    fn test_if_expr() {
+        let input = "if (x < y) { x }";
+        assert_prog(input, |stmts| match &stmts[0] {
+            Stmt::Expr { expr } => match expr {
+                Expr::If {
+                    token,
+                    condition,
+                    consequence,
+                    alternative,
+                } => {
+                    test_infix(
+                        &condition,
+                        b"<",
+                        |e| assert_ident(e, b"x"),
+                        |e| assert_ident(e, b"y"),
+                    );
+
+                    assert_block_stmt(&consequence, |e| assert_ident(e, b"x"));
+                    assert!(alternative.is_none());
+                }
+                _ => panic!("not an If expr, got {:?}", expr),
+            },
+            _ => panic!("not an expr"),
+        })
+    }
+
+    #[test]
+    fn test_if_else_expr() {
+        let input = "if (x < y) { x } else { y }";
+        assert_prog(input, |stmts| match &stmts[0] {
+            Stmt::Expr { expr } => match expr {
+                Expr::If {
+                    token,
+                    condition,
+                    consequence,
+                    alternative,
+                } => {
+                    test_infix(
+                        &condition,
+                        b"<",
+                        |e| assert_ident(e, b"x"),
+                        |e| assert_ident(e, b"y"),
+                    );
+
+                    assert_block_stmt(&consequence, |e| assert_ident(e, b"x"));
+                    assert_block_stmt(alternative.as_deref().unwrap(), |e| assert_ident(e, b"y"));
+                }
+                _ => panic!("not an If expr, got {:?}", expr),
+            },
+            _ => panic!("not an expr"),
+        })
+    }
+
     fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {
         let mut p = Parser::new(Lexer::new(input.as_bytes()));
         let prog = p.parse();
-        assert!(prog.is_ok());
-        assertions(&prog.unwrap().stmts);
+        if let Ok(p) = prog {
+            assertions(&p.stmts);
+        } else {
+            log_errors(&p.errors);
+            panic!();
+        }
     }
 }

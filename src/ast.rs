@@ -1,7 +1,7 @@
 #![allow(unused, dead_code)]
 
-use core::fmt;
 use crate::token::Token;
+use core::fmt;
 
 // Remove heap allocation per node to single allocation per AST
 // with an arena alloc
@@ -30,6 +30,12 @@ pub enum Expr<'a> {
         op: &'a [u8],
         right: Box<Expr<'a>>,
     },
+    If {
+        token: Token<'a>,
+        condition: Box<Expr<'a>>,
+        consequence: Box<Stmt<'a>>,
+        alternative: Option<Box<Stmt<'a>>>,
+    },
 }
 
 impl fmt::Display for Expr<'_> {
@@ -43,6 +49,18 @@ impl fmt::Display for Expr<'_> {
             }
             Expr::BoolLiteral { token, .. } => {
                 write!(f, "{}", token)
+            }
+            Expr::If {
+                consequence,
+                alternative,
+                token,
+                condition,
+            } => {
+                if let Some(alt) = alternative {
+                    write!(f, "if {} {} else {})", condition, consequence, alt)
+                } else {
+                    write!(f, "if {} {})", condition, consequence)
+                }
             }
             Expr::Prefix { expr, op, .. } => {
                 write!(f, "({}{})", std::str::from_utf8(op).unwrap(), expr)
@@ -66,16 +84,33 @@ pub struct Program<'a> {
     pub stmts: Vec<Stmt<'a>>,
 }
 
+#[derive(Debug)]
 pub enum Stmt<'a> {
-    Let { token: Token<'a>, name: Expr<'a> },
-    Return { token: Token<'a> },
-    Expr { expr: Expr<'a> },
+    Let {
+        token: Token<'a>,
+        name: Expr<'a>,
+    },
+    Return {
+        token: Token<'a>,
+    },
+    Expr {
+        expr: Expr<'a>,
+    },
+    Block {
+        token: Token<'a>,
+        stmts: Vec<Stmt<'a>>,
+    },
 }
 
 impl fmt::Display for Stmt<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Stmt::Expr { expr } => write!(f, "{}", expr),
+            Stmt::Block { stmts, .. } => write!(
+                f,
+                "{}",
+                stmts.iter().map(|s| s.to_string()).collect::<String>()
+            ),
             Stmt::Return { token } => {
                 write!(f, "{} <>;", std::str::from_utf8(token.literal).unwrap())
             }
