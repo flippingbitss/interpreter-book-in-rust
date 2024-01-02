@@ -19,6 +19,12 @@ pub enum Expr<'a> {
         token: Token<'a>,
         value: bool,
     },
+    FnLiteral {
+        token: Token<'a>,
+        parameters: Vec<Expr<'a>>,
+        block: Box<Stmt<'a>>,
+    },
+
     Prefix {
         token: Token<'a>,
         op: &'a [u8],
@@ -49,6 +55,19 @@ impl fmt::Display for Expr<'_> {
             }
             Expr::BoolLiteral { token, .. } => {
                 write!(f, "{}", token)
+            }
+            Expr::FnLiteral {
+                token,
+                parameters,
+                block,
+            } => {
+                write!(
+                    f,
+                    "{} ({}) {}",
+                    token,
+                    parameters.iter().map(|p| p.to_string()).collect::<String>(),
+                    block
+                )
             }
             Expr::If {
                 consequence,

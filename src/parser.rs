@@ -124,6 +124,7 @@ impl<'a> Parser<'a> {
         // try as prefix first
         let curr_tt = self.curr_token.token_type;
         let left = match curr_tt {
+            TokenType::FUNCTION => self.parse_fn_literal(),
             TokenType::LPAREN => self.parse_group_expr(),
             TokenType::IF => self.parse_if_expr(),
             TokenType::TRUE => self.parse_bool_literal(),
@@ -270,6 +271,59 @@ impl<'a> Parser<'a> {
 
         Stmt::Block { token, stmts }
     }
+
+    fn parse_fn_literal(&mut self) -> Option<Expr<'a>> {
+        let token = self.curr_token;
+        if !self.advance_if_peek(TokenType::LPAREN) {
+            return None;
+        }
+
+        let parameters = self.parse_fn_parameters();
+
+        if !self.advance_if_peek(TokenType::LBRACE) {
+            return None;
+        }
+
+        let block = self.parse_block_stmt();
+
+        Some(Expr::FnLiteral {
+            token,
+            parameters,
+            block: Box::new(block),
+        })
+    }
+
+    fn parse_fn_parameters(&mut self) -> Vec<Expr<'a>> {
+        if self.is_peek_token(TokenType::RPAREN) {
+            self.next_token();
+            return vec![];
+        }
+
+        self.next_token();
+        let mut params = Vec::new();
+        // first param
+        let ident = Expr::Identifier {
+            token: self.curr_token,
+            value: self.curr_token.literal,
+        };
+        params.push(ident);
+
+        while self.is_peek_token(TokenType::COMMA) {
+            self.next_token();
+            self.next_token();
+            let ident = Expr::Identifier {
+                token: self.curr_token,
+                value: self.curr_token.literal,
+            };
+            params.push(ident);
+        }
+
+        if !self.advance_if_peek(TokenType::RPAREN) {
+            return vec![];
+        }
+
+        params
+    }
 }
 
 #[cfg(test)]
@@ -315,7 +369,7 @@ mod tests {
         }
     }
 
-    fn assert_expr_stmt(stmt: &Stmt, assert: AssertExpr) {
+    fn assert_expr_stmt<F: FnOnce(&Expr) -> ()>(stmt: &Stmt, assert: F) {
         match stmt {
             Stmt::Expr { expr } => assert(expr),
             _ => panic!("not an expression statement"),
@@ -329,7 +383,7 @@ mod tests {
         };
     }
 
-    fn test_infix(expr: &Expr, eop: &[u8], eleft: AssertExpr, eright: AssertExpr) {
+    fn assert_infix_expr(expr: &Expr, eop: &[u8], eleft: AssertExpr, eright: AssertExpr) {
         if let Expr::Infix {
             op, left, right, ..
         } = expr
@@ -543,7 +597,7 @@ return xyz;
                     consequence,
                     alternative,
                 } => {
-                    test_infix(
+                    assert_infix_expr(
                         &condition,
                         b"<",
                         |e| assert_ident(e, b"x"),
@@ -570,7 +624,7 @@ return xyz;
                     consequence,
                     alternative,
                 } => {
-                    test_infix(
+                    assert_infix_expr(
                         &condition,
                         b"<",
                         |e| assert_ident(e, b"x"),
@@ -586,6 +640,61 @@ return xyz;
         })
     }
 
+    #[test]
+    fn test_fn_literal() {
+        let input = "fn(x,y) { x + y; }";
+
+        assert_prog(input, |stmts| {
+            assert_expr_stmt(&stmts[0], |s| match s {
+                Expr::FnLiteral {
+                    token,
+                    parameters,
+                    block,
+                } => {
+                    assert_eq!(parameters.len(), 2);
+                    assert_ident(&parameters[0], b"x");
+                    assert_ident(&parameters[1], b"y");
+                    match block.as_ref() {
+                        Stmt::Block { token, stmts } => assert_expr_stmt(&stmts[0], |s| {
+                            assert_infix_expr(
+                                s,
+                                b"+",
+                                |e| assert_ident(e, b"x"),
+                                |e| assert_ident(e, b"y"),
+                            );
+                        }),
+                        _ => panic!("not a block statement"),
+                    }
+                }
+                _ => panic!("not a fn literal"),
+            });
+        })
+    }
+
+    #[test]
+    fn test_fn_params() {
+        let inputs = [
+            ("fn() {};", vec![]),
+            ("fn(x) {};", vec![b"x"]),
+            ("fn(x,y,z) {};", vec![b"x", b"y", b"z"]),
+        ];
+        for (input, eparams) in inputs {
+            assert_prog(input, |stmts| {
+                assert_expr_stmt(&stmts[0], |s| match s {
+                    Expr::FnLiteral {
+                        token,
+                        parameters,
+                        block,
+                    } => {
+                        for i in 0..eparams.len() {
+                            assert_ident(&parameters[i], eparams[i]);
+                        }
+                    }
+                    _ => panic!("not a fn literal"),
+                })
+            })
+        }
+    }
     fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {
         let mut p = Parser::new(Lexer::new(input.as_bytes()));
         let prog = p.parse();
