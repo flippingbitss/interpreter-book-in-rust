@@ -62,6 +62,7 @@ impl TokenType {
             Self::MINUS => Prec::Sum,
             Self::FSLASH => Prec::Product,
             Self::MUL => Prec::Product,
+            Self::LPAREN => Prec::FnCall,
             _ => Prec::Lowest,
         }
     }

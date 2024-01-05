@@ -24,7 +24,11 @@ pub enum Expr<'a> {
         parameters: Vec<Expr<'a>>,
         block: Box<Stmt<'a>>,
     },
-
+    Call {
+        token: Token<'a>,
+        function: Box<Expr<'a>>,
+        arguments: Vec<Expr<'a>>,
+    },
     Prefix {
         token: Token<'a>,
         op: &'a [u8],
@@ -65,8 +69,29 @@ impl fmt::Display for Expr<'_> {
                     f,
                     "{} ({}) {}",
                     token,
-                    parameters.iter().map(|p| p.to_string()).collect::<String>(),
+                    parameters
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", "),
                     block
+                )
+            }
+            Expr::Call {
+                token,
+                arguments,
+                function,
+            } => {
+                write!(
+                    f,
+                    "{}({})",
+                    function,
+                    arguments
+                        .iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    
                 )
             }
             Expr::If {

@@ -154,9 +154,13 @@ impl<'a> Parser<'a> {
                     | TokenType::LT
                     | TokenType::GT
             );
+            let call = matches!(self.peek_token.token_type, TokenType::LPAREN);
             if infix {
                 self.next_token();
                 expr = expr.and_then(|e| self.parse_infix_expr(e));
+            } else if call {
+                self.next_token();
+                expr = expr.and_then(|e| self.parse_call_expr(e))
             } else {
                 return expr;
             }
@@ -323,6 +327,38 @@ impl<'a> Parser<'a> {
         }
 
         params
+    }
+
+    fn parse_call_expr(&mut self, fn_expr: Expr<'a>) -> Option<Expr<'a>> {
+        let arguments = self.parse_call_args();
+        Some(Expr::Call {
+            token: self.curr_token,
+            function: Box::new(fn_expr),
+            arguments,
+        })
+    }
+
+    fn parse_call_args(&mut self) -> Vec<Expr<'a>> {
+        if self.is_peek_token(TokenType::RPAREN) {
+            self.next_token();
+            return vec![];
+        }
+        self.next_token();
+        let mut args = Vec::new();
+        if let Some(e) = self.parse_expr(Prec::Lowest) {
+            args.push(e);
+        }
+        while self.is_peek_token(TokenType::COMMA) {
+            self.next_token();
+            self.next_token();
+            if let Some(e) = self.parse_expr(Prec::Lowest) {
+                args.push(e);
+            }
+        }
+        if !self.advance_if_peek(TokenType::RPAREN) {
+            return vec![];
+        }
+        args
     }
 }
 
@@ -547,6 +583,15 @@ return xyz;
                 "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             ),
+            ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
+            (
+                "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+                "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            ),
+            (
+                "add(a + b + c * d / f + g)",
+                "add((((a + b) + ((c * d) / f)) + g))",
+            ),
         ];
         for (i, o) in inputs {
             assert_prog(i, |stmts| {
@@ -695,6 +740,37 @@ return xyz;
             })
         }
     }
+
+    #[test]
+    fn test_fn_call() {
+        let input = "add(1, 2 * 3, 4 + 5);";
+        assert_prog(input, |stmts| {
+            assert_expr_stmt(&stmts[0], |s| match s {
+                Expr::Call {
+                    token,
+                    arguments,
+                    function,
+                } => {
+                    assert_ident(function, b"add");
+                    assert_int_literal(&arguments[0], 1);
+                    assert_infix_expr(
+                        &arguments[1],
+                        b"*",
+                        |e| assert_int_literal(e, 2),
+                        |e| assert_int_literal(e, 3),
+                    );
+                    assert_infix_expr(
+                        &arguments[2],
+                        b"+",
+                        |e| assert_int_literal(e, 4),
+                        |e| assert_int_literal(e, 5),
+                    );
+                }
+                _ => panic!("not a call expr"),
+            })
+        })
+    }
+
     fn assert_prog<F: Fn(&[Stmt])>(input: &str, assertions: F) {
         let mut p = Parser::new(Lexer::new(input.as_bytes()));
         let prog = p.parse();
