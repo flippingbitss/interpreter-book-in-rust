@@ -91,7 +91,6 @@ impl fmt::Display for Expr<'_> {
                         .map(|p| p.to_string())
                         .collect::<Vec<String>>()
                         .join(", "),
-                    
                 )
             }
             Expr::If {
@@ -133,9 +132,11 @@ pub enum Stmt<'a> {
     Let {
         token: Token<'a>,
         name: Expr<'a>,
+        value: Expr<'a>,
     },
     Return {
         token: Token<'a>,
+        value: Expr<'a>,
     },
     Expr {
         expr: Expr<'a>,
@@ -155,14 +156,20 @@ impl fmt::Display for Stmt<'_> {
                 "{}",
                 stmts.iter().map(|s| s.to_string()).collect::<String>()
             ),
-            Stmt::Return { token } => {
-                write!(f, "{} <>;", std::str::from_utf8(token.literal).unwrap())
+            Stmt::Return { token, value } => {
+                write!(
+                    f,
+                    "{} {};",
+                    std::str::from_utf8(token.literal).unwrap(),
+                    value
+                )
             }
-            Stmt::Let { name, token } => write!(
+            Stmt::Let { name, token, value } => write!(
                 f,
-                "{} {} = <expr>;",
+                "{} {} = {};",
                 std::str::from_utf8(token.literal).unwrap(),
                 name,
+                value
             ),
         }
     }

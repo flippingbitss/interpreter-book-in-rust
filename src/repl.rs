@@ -1,10 +1,8 @@
 use crate::{lexer, parser::Parser};
 
-const PROMPT: &'static str = ">> ";
-
 pub fn start() {
     loop {
-        print!("{PROMPT}");
+        println!("Try out the RPPL - (Read-parse-print-loop)\n>>");
         for line in std::io::stdin().lines() {
             match line {
                 Ok(line) => {

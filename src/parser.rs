@@ -66,21 +66,32 @@ impl<'a> Parser<'a> {
             return None;
         }
 
-        while !self.is_curr_token(TokenType::SEMICOLON) {
+        self.next_token();
+
+        let value = self.parse_expr(Prec::Lowest);
+
+        if self.is_peek_token(TokenType::SEMICOLON) {
             self.next_token();
         }
 
-        Some(Stmt::Let { name, token })
+        value.map(|v| Stmt::Let {
+            name,
+            token,
+            value: v,
+        })
     }
 
     fn parse_return_stmt(&mut self) -> Option<Stmt<'a>> {
         let token = self.curr_token;
 
-        while !self.is_curr_token(TokenType::SEMICOLON) {
+        self.next_token();
+        let value = self.parse_expr(Prec::Lowest);
+
+        if self.is_peek_token(TokenType::SEMICOLON) {
             self.next_token();
         }
 
-        Some(Stmt::Return { token })
+        value.map(|v| Stmt::Return { token, value: v })
     }
 
     fn parse_expr_stmt(&mut self) -> Option<Stmt<'a>> {
@@ -379,6 +390,24 @@ mod tests {
         std::str::from_utf8(value).unwrap()
     }
 
+    fn assert_let_stmt(stmt: &Stmt, ename: &[u8], value_assert: AssertExpr) {
+        if let Stmt::Let { name, token, value } = stmt {
+            assert_eq!(token.literal, b"let");
+            value_assert(value);
+        } else {
+            panic!("not a let statement")
+        }
+    }
+
+    fn assert_return_stmt(stmt: &Stmt, value_assert: AssertExpr) {
+        if let Stmt::Return { token, value } = stmt {
+            assert_eq!(token.literal, b"return");
+            value_assert(value);
+        } else {
+            panic!("not a return statement")
+        }
+    }
+
     fn assert_int_literal(expr: &Expr, expected: i64) {
         match expr {
             Expr::IntLiteral { token, value } => {
@@ -433,37 +462,33 @@ mod tests {
     }
 
     #[test]
-    fn test_stmts() {
+    fn test_let_stmts() {
         let input = "let x = 5;
 let y = 10;
-let foobar = 838383;
-return 123;
-return xyz;
 ";
-        let mut l = Lexer::new(input.as_bytes());
-        let mut parser = Parser::new(l);
-        let prog = parser.parse();
-        assert!(prog.is_ok());
-
-        let expected_lets: Vec<&[u8]> = vec![b"x", b"y", b"foobar"];
-        if let Ok(p) = prog {
-            for (ident, stmt) in expected_lets.iter().zip(p.stmts.iter()) {
-                test_let_stmt(stmt, ident);
-            }
-
-            for stmt in p.stmts.iter().skip(3) {
-                assert!(matches!(stmt, Stmt::Return { .. }));
-            }
-        }
+        assert_prog(input, |stmts| {
+            assert_let_stmt(&stmts[0], b"x", |e| assert_int_literal(e, 5));
+            assert_let_stmt(&stmts[1], b"y", |e| assert_int_literal(e, 10));
+        })
     }
 
-    fn test_let_stmt(stmt: &Stmt, tc_name: &[u8]) {
-        assert!(matches!(stmt, Stmt::Let { .. }));
-
-        if let Stmt::Let { name, token } = stmt {
-            assert_eq!(token.literal, b"let");
-            assert!(matches!(name, Expr::Identifier { token, value }));
-        };
+    #[test]
+    fn test_return_stmts() {
+        let input = "return 10;
+return 2 * 3;
+";
+        assert_prog(input, |stmts| {
+            dbg!(stmts);
+            assert_return_stmt(&stmts[0], |e| assert_int_literal(e, 10));
+            assert_return_stmt(&stmts[1], |e| {
+                assert_infix_expr(
+                    e,
+                    b"*",
+                    |e| assert_int_literal(e, 2),
+                    |e| assert_int_literal(e, 3),
+                )
+            });
+        })
     }
 
     #[test]
@@ -489,9 +514,14 @@ return xyz;
                 token: Token::new(TokenType::IDENT, b"x"),
                 value: b"x",
             },
+            value: Expr::Identifier {
+                token: Token::new(TokenType::IDENT, b"y"),
+                value: b"y",
+            },
+
         };
         eprintln!("{a}");
-        assert_eq!(format!("{a}"), "let x = <expr>;");
+        assert_eq!(format!("{a}"), "let x = y;");
     }
 
     fn log_errors(p: &[String]) {
