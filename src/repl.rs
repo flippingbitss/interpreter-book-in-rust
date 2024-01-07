@@ -1,4 +1,4 @@
-use crate::{lexer, parser::Parser};
+use crate::{lexer, parser::Parser, evaluator::eval_program};
 
 pub fn start() {
     loop {
@@ -10,10 +10,12 @@ pub fn start() {
                     let mut p = Parser::new(l);
                     match p.parse() {
                         Ok(prog) => {
-                            for s in prog.stmts {
-                                println!("{}", s);
+                            match eval_program(prog) {
+                                Ok(value) => println!("{}", value),
+                                Err(err) => println!("Error during eval: {}", err)
                             }
-                        }
+                            
+                       }
                         Err(errors) => {
                             println!("failed to parse input. Errors:\n {:?}", errors);
                         }

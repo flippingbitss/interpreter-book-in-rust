@@ -28,7 +28,7 @@ impl<'a> Parser<'a> {
         self.peek_token = self.lexer.next_token();
     }
 
-    pub fn parse(&mut self) -> Result<Program, Vec<String>> {
+    pub fn parse(&mut self) -> Result<Program<'a>, Vec<String>> {
         let mut stmts = Vec::new();
 
         while self.curr_token != token::EOF {
