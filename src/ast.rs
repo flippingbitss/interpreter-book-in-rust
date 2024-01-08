@@ -123,6 +123,8 @@ impl fmt::Display for Expr<'_> {
     }
 }
 
+
+#[derive(Debug)]
 pub struct Program<'a> {
     pub stmts: Vec<Stmt<'a>>,
 }

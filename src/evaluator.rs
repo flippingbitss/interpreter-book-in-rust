@@ -7,6 +7,20 @@ pub fn eval_program(prog: Program) -> Result<Object, &str> {
     let mut result = Ok(Object::Null);
     for stmt in prog.stmts {
         result = eval_stmt(stmt);
+        if let Ok(Object::ReturnValue(value)) = result {
+            return Ok(*value);
+        }
+    }
+    result
+}
+
+fn eval_block<'a>(stmts: Vec<Stmt<'a>>) -> Result<Object, &'a str> {
+    let mut result = Ok(Object::Null);
+    for stmt in stmts {
+        result = eval_stmt(stmt);
+        if let Ok(Object::ReturnValue(_)) = result {
+            return result;
+        }
     }
     result
 }
@@ -14,13 +28,8 @@ pub fn eval_program(prog: Program) -> Result<Object, &str> {
 fn eval_stmt(stmt: Stmt<'_>) -> Result<Object, &str> {
     match stmt {
         Stmt::Expr { expr } => eval(expr),
-        Stmt::Block { stmts, .. } => {
-            let mut result = Object::Null;
-            for stmt in stmts {
-                result = eval_stmt(stmt)?
-            }
-            Ok(result)
-        }
+        Stmt::Block { stmts, .. } => eval_block(stmts),
+        Stmt::Return { value, .. } => Ok(Object::ReturnValue(Box::new(eval(value)?))),
         _ => Ok(Object::Null),
     }
 }
@@ -58,14 +67,9 @@ fn eval_conditional_expr<'a>(
     match cond {
         Object::Bool(value) => {
             if value {
-                println!("bool is true");
-                eval_program(Program {
-                    stmts: vec![consequence],
-                })
+                eval_stmt(consequence)
             } else if alternative.is_some() {
-                eval_program(Program {
-                    stmts: vec![alternative.unwrap()],
-                })
+                eval_stmt(alternative.unwrap())
             } else {
                 Ok(Object::Null)
             }
@@ -239,6 +243,22 @@ mod tests {
         for input in falsy_inputs {
             let value = eval_prog(input);
             assert!(matches!(value.unwrap(), Object::Null));
+        }
+    }
+
+    #[test]
+    fn test_return_stmt() {
+        let inputs = [
+            ("return 10;", 10),
+            ("return 10; 9;", 10),
+            ("return 2 * 5; 9;", 10),
+            ("9; return 2 * 5; 9;", 10),
+            ("if (10 > 1) { if (10 > 1) { return 10; } return 1; }", 10),
+        ];
+        for (i, expected) in inputs {
+            eprintln!("{}", i);
+            let obj = eval_prog(i).unwrap();
+            assert_int_obj(&obj, expected);
         }
     }
 }
