@@ -1,4 +1,4 @@
-use crate::{lexer, parser::Parser, evaluator::eval_program};
+use crate::{lexer, parser::Parser, evaluator::eval_program, env::Env};
 
 pub fn start() {
     loop {
@@ -8,9 +8,10 @@ pub fn start() {
                 Ok(line) => {
                     let l = lexer::Lexer::new(line.as_bytes());
                     let mut p = Parser::new(l);
+                    let mut env = Env::new();
                     match p.parse() {
                         Ok(prog) => {
-                            match eval_program(prog) {
+                            match eval_program(prog, &mut env) {
                                 Ok(value) => println!("{}", value),
                                 Err(err) => println!("Error during eval: {}", err)
                             }

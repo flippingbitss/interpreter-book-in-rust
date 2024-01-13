@@ -1,60 +1,83 @@
 use crate::{
     ast::{Expr, Program, Stmt},
+    env::Env,
     object::Object,
 };
 
-pub fn eval_program(prog: Program) -> Result<Object, &str> {
+pub fn eval_program<'a>(prog: Program<'a>, env: &mut Env<'a>) -> Result<Object, &'a str> {
     let mut result = Ok(Object::Null);
     for stmt in prog.stmts {
-        result = eval_stmt(stmt);
-        if let Ok(Object::ReturnValue(value)) = result {
-            return Ok(*value);
+        result = eval_stmt(stmt, env);
+        match result {
+            Ok(Object::ReturnValue(value)) => return Ok(*value),
+            err @ Err(_) => return err,
+            _ => {}
         }
     }
     result
 }
 
-fn eval_block<'a>(stmts: Vec<Stmt<'a>>) -> Result<Object, &'a str> {
+fn eval_block<'a>(stmts: Vec<Stmt<'a>>, env: &mut Env<'a>) -> Result<Object, &'a str> {
     let mut result = Ok(Object::Null);
     for stmt in stmts {
-        result = eval_stmt(stmt);
-        if let Ok(Object::ReturnValue(_)) = result {
-            return result;
+        result = eval_stmt(stmt, env);
+        match result {
+            Ok(Object::ReturnValue(_)) => return result,
+            err @ Err(_) => return err,
+            _ => {}
         }
     }
     result
 }
 
-fn eval_stmt(stmt: Stmt<'_>) -> Result<Object, &str> {
+fn eval_stmt<'a>(stmt: Stmt<'a>, env: &mut Env<'a>) -> Result<Object, &'a str> {
     match stmt {
-        Stmt::Expr { expr } => eval(expr),
-        Stmt::Block { stmts, .. } => eval_block(stmts),
-        Stmt::Return { value, .. } => Ok(Object::ReturnValue(Box::new(eval(value)?))),
-        _ => Ok(Object::Null),
+        Stmt::Expr { expr } => eval(expr, env),
+        Stmt::Block { stmts, .. } => eval_block(stmts, env),
+        Stmt::Return { value, .. } => Ok(Object::ReturnValue(Box::new(eval(value, env)?))),
+        Stmt::Let { name, value, .. } => {
+            let result = eval(value, env);
+            match result {
+                Ok(value) => {
+                    if let Expr::Identifier { value: name, .. } = name {
+                        env.set(name, value);
+                    }
+                    Ok(Object::Null)
+                }
+                _ => result,
+            }
+        }
     }
 }
 
-fn eval(expr: Expr) -> Result<Object, &str> {
+fn eval<'a>(expr: Expr<'a>, env: &mut Env<'a>) -> Result<Object, &'a str> {
     match expr {
-        //Expr::Identifier { token, value } => todo!(),
+        Expr::Identifier { value, .. } => eval_identifier(value, env),
         Expr::IntLiteral { value, .. } => Ok(Object::Integer(value)),
         Expr::BoolLiteral { value, .. } => Ok(Object::Bool(value)),
         //Expr::FnLiteral { token, parameters, block } => todo!(),
         //Expr::Call { token, function, arguments } => todo!(),
         Expr::Prefix { op, expr, .. } => {
-            let right = eval(*expr)?;
+            let right = eval(*expr, env)?;
             eval_prefix_expr(op, right)
         }
         Expr::Infix {
             left, op, right, ..
-        } => eval_infix_expr(op, eval(*left)?, eval(*right)?),
+        } => eval_infix_expr(op, eval(*left, env)?, eval(*right, env)?),
         Expr::If {
             condition,
             consequence,
             alternative,
             ..
-        } => eval_conditional_expr(*condition, *consequence, alternative.map(|s| *s)),
+        } => eval_conditional_expr(*condition, *consequence, alternative.map(|s| *s), env),
         _ => Err("not supported expr type"),
+    }
+}
+
+fn eval_identifier<'a>(ident: &[u8], env: &mut Env<'a>) -> Result<Object, &'a str> {
+    match env.get(ident) {
+        Some(value) => Ok(value),
+        None => Err("variable not found"),
     }
 }
 
@@ -62,14 +85,15 @@ fn eval_conditional_expr<'a>(
     condition: Expr<'a>,
     consequence: Stmt<'a>,
     alternative: Option<Stmt<'a>>,
+    env: &mut Env<'a>,
 ) -> Result<Object, &'a str> {
-    let cond = eval(condition)?;
+    let cond = eval(condition, env)?;
     match cond {
         Object::Bool(value) => {
             if value {
-                eval_stmt(consequence)
+                eval_stmt(consequence, env)
             } else if alternative.is_some() {
-                eval_stmt(alternative.unwrap())
+                eval_stmt(alternative.unwrap(), env)
             } else {
                 Ok(Object::Null)
             }
@@ -103,12 +127,12 @@ fn eval_infix_expr(op: &[u8], left: Object, right: Object) -> Result<Object, &st
             b">" => Object::Bool(left > right),
             b"==" => Object::Bool(left == right),
             b"!=" => Object::Bool(left != right),
-            _ => return Err("not supported"),
+            _ => return Err("operator not supported for given types"),
         }),
         (Object::Bool(left), Object::Bool(right)) => Ok(match op {
             b"==" => Object::Bool(left == right),
             b"!=" => Object::Bool(left != right),
-            _ => return Err("not supported"),
+            _ => return Err("operator not supported for given types"),
         }),
 
         _ => Err("operand can only be applied to numbers"),
@@ -117,7 +141,7 @@ fn eval_infix_expr(op: &[u8], left: Object, right: Object) -> Result<Object, &st
 
 #[cfg(test)]
 mod tests {
-    use crate::{lexer::Lexer, object::Object, parser::Parser};
+    use crate::{env::Env, lexer::Lexer, object::Object, parser::Parser};
 
     use super::eval_program;
 
@@ -125,9 +149,10 @@ mod tests {
         let l = Lexer::new(input.as_bytes());
         let mut parser = Parser::new(l);
         let prog = parser.parse();
+        let mut env = Env::new();
 
         match prog {
-            Ok(p) => eval_program(p),
+            Ok(p) => eval_program(p, &mut env),
             Err(_) => panic!("failed to evaluate program"),
         }
     }
@@ -259,6 +284,47 @@ mod tests {
             eprintln!("{}", i);
             let obj = eval_prog(i).unwrap();
             assert_int_obj(&obj, expected);
+        }
+    }
+
+    #[test]
+    fn test_errors() {
+        let inputs = [
+            "5 + true;",
+            "5 + true; 5;",
+            "-true",
+            "true + false;",
+            "5; true + false; 5",
+            "if (10 > 1) { true + false; }",
+            "
+if (10 > 1) {
+if (10 > 1) {
+return true + false;
+}
+return 1;
+}
+",
+            "foobar",
+        ];
+
+        for i in inputs {
+            let res = eval_prog(i);
+            assert!(res.is_err());
+        }
+    }
+
+    #[test]
+    fn test_let_stmts() {
+        let inputs = [
+            ("let a = 5; a;", 5),
+            ("let a = 5 * 5; a;", 25),
+            ("let a = 5; let b = a; b;", 5),
+            ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
+        ];
+
+        for (i, evalue) in inputs {
+            let obj = eval_prog(i).unwrap();
+            assert_int_obj(&obj, evalue);
         }
     }
 }
